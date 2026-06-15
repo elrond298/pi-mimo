@@ -59,7 +59,6 @@ interface MiMoPlatformModel {
 
 const DEFAULT_BASE_URL = "https://token-plan-sgp.xiaomimimo.com/v1";
 const PLATFORM_URL = "https://platform.xiaomimimo.com/api/v1";
-
 type MiMoApi = "openai-completions" | "anthropic-messages";
 
 /** Resolve config from env vars or auth.json. */
@@ -164,6 +163,27 @@ function isCodingModel(model: MiMoModel, plat?: MiMoPlatformModel): boolean {
   return true;
 }
 
+/** Built-in platform metadata for models not yet listed on the platform API. */
+const BUILTIN_PLATFORM_MODELS: MiMoPlatformModel[] = [
+  {
+    id: "mimo-v2.5-pro-ultraspeed",
+    name: "Xiaomi MiMo:mimo-v2.5-pro-ultraspeed",
+    context_length: 1048576,
+    max_output_length: 131072,
+    architecture: {
+      modality: "text->text",
+      input_modalities: ["text"],
+      output_modalities: ["text"],
+    },
+    // Pricing in USD per token (divide the per-million price by 1,000,000)
+    pricing: {
+      prompt: "0.000001305",       // $1.305/M tokens (cache miss)
+      completion: "0.00000261",    // $2.61/M tokens
+      input_cache_read: "0.0000000108", // $0.0108/M tokens (cache hit)
+    },
+  },
+];
+
 export default async function (pi: ExtensionAPI) {
   const { apiKey, baseUrl, api } = resolveConfig();
 
@@ -208,7 +228,10 @@ export default async function (pi: ExtensionAPI) {
   }
 
   // Enrich with platform metadata if available
-  let platformModels: Map<string, MiMoPlatformModel> = new Map();
+  // Seed with built-in entries first; platform API data takes precedence when available.
+  const platformModels: Map<string, MiMoPlatformModel> = new Map(
+    BUILTIN_PLATFORM_MODELS.map((m) => [m.id, m]),
+  );
   try {
     const platResp = await fetch(`${PLATFORM_URL}/models`);
     if (platResp.ok) {
