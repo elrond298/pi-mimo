@@ -1,6 +1,6 @@
 {
   "name": "@lesetong/pi-mimo",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Pi extension for Xiaomi MiMo AI models with multi-region & auth.json support",
   "keywords": [
     "pi-package",
