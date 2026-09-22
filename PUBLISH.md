@@ -25,7 +25,8 @@ The open-source MiMo-7B-RL already matches OpenAI o1-mini on math and code reaso
 - **Auto-discovers** all coding-capable models from the MiMo API at startup
 - **Multi-region support**: China, Singapore, Europe clusters
 - **Dual protocol**: OpenAI-compatible **and** Anthropic-compatible APIs
-- **Flexible auth**: Environment variables OR `~/.pi/agent/auth.json` — no env pollution needed
+- **`/login` support**: `pi` → `/login mimo` → paste key, no env vars needed
+- **Flexible auth**: `/login`, environment variables, or `~/.pi/agent/auth.json`
 - **Smart filtering**: Excludes non-coding models (TTS, embeddings, image-gen, etc.)
 - **Rich metadata**: Context window, pricing, input modalities from platform API
 
@@ -36,20 +37,24 @@ The open-source MiMo-7B-RL already matches OpenAI o1-mini on math and code reaso
 pi install npm:@lesetong/pi-mimo
 ```
 
-**Option A — Environment variables:**
+**Option A — `/login` inside pi (easiest):**
+
+Run `/login mimo`, pick **Xiaomi MiMo**, paste your key. It lands in `~/.pi/agent/auth.json`.
+
+**Option B — Environment variables:**
 ```bash
 export MIMO_API_KEY="tp-xxxxx"
-export MIMO_BASE_URL="https://token-plan-sgp.xiaomimimo.com/v1"  # optional
+export MIMO_BASE_URL="https://token-plan-cn.xiaomimimo.com/v1"  # optional
 export MIMO_API="openai-completions"                             # optional
 ```
+**Option C — auth.json (no env vars):**
 
-**Option B — auth.json (recommended, no env vars):**
 ```json
 {
   "mimo": {
     "type": "api_key",
     "key": "tp-xxxxx",
-    "baseUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
+    "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
     "api": "openai-completions"
   }
 }
@@ -65,7 +70,7 @@ Then just run `pi` — models appear under provider `mimo`.
 | Singapore (SGP) | `https://token-plan-sgp.xiaomimimo.com/v1` | `https://token-plan-sgp.xiaomimimo.com/anthropic` |
 | Europe (AMS) | `https://token-plan-ams.xiaomimimo.com/v1` | `https://token-plan-ams.xiaomimimo.com/anthropic` |
 
-Default: Singapore / OpenAI-compatible.
+Default: China / OpenAI-compatible.
 
 ### Why another provider?
 

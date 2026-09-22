@@ -6,20 +6,21 @@
  *
  * Setup:
  *   1. Install: pi install npm:pi-mimo
- *   2. Set API key & region:
+ *   2. Log in inside pi:  /login mimo   (stores the key in ~/.pi/agent/auth.json)
+ *   3. Or set env vars:
  *      - export MIMO_API_KEY="your-api-key"
- *      - export MIMO_BASE_URL="https://token-plan-sgp.xiaomimimo.com/v1"  (optional)
+ *      - export MIMO_BASE_URL="https://token-plan-cn.xiaomimimo.com/v1"  (optional)
  *      - export MIMO_API="openai-completions"                            (optional)
- *   3. Or store in ~/.pi/agent/auth.json:
+ *   4. Or store everything in ~/.pi/agent/auth.json:
  *      {
  *        "mimo": {
  *          "type": "api_key",
  *          "key": "your-api-key",
- *          "baseUrl": "https://token-plan-sgp.xiaomimimo.com/v1",
+ *          "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
  *          "api": "openai-completions"
  *        }
  *      }
- *   4. Run pi — models appear under provider "mimo"
+ *   5. Run pi — models appear under provider "mimo"
  *
  * Or test locally:
  *   MIMO_API_KEY="your-key" pi -e ./extensions/index.ts
@@ -57,7 +58,7 @@ interface MiMoPlatformModel {
     | Array<{ prompt: string; completion: string; input_cache_read?: string }>;
 }
 
-const DEFAULT_BASE_URL = "https://token-plan-sgp.xiaomimimo.com/v1";
+const DEFAULT_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1";
 const PLATFORM_URL = "https://platform.xiaomimimo.com/api/v1";
 type MiMoApi = "openai-completions" | "anthropic-messages";
 
@@ -177,58 +178,101 @@ const BUILTIN_PLATFORM_MODELS: MiMoPlatformModel[] = [
     },
     // Pricing in USD per token (divide the per-million price by 1,000,000)
     pricing: {
-      prompt: "0.000001305",       // $1.305/M tokens (cache miss)
-      completion: "0.00000261",    // $2.61/M tokens
-      input_cache_read: "0.0000000108", // $0.0108/M tokens (cache hit)
+      prompt: "0.00000435", // $4.35/M tokens (cache miss)
+      completion: "0.0000087", // $8.70/M tokens
+      input_cache_read: "0.000000036", // $0.036/M tokens (cache hit)
+    },
+  },
+  // MiMo-V2.6 / V2.5-Pro. Pricing in USD per token (divide the per-million
+  // price by 1,000,000), matching platform.xiaomimimo.com and the token-plan
+  // credit table (300 credits per M input = ¥3.00/M = $0.435/M).
+  {
+    id: "mimo-v2.6-pro",
+    name: "MiMo V2.6 Pro",
+    context_length: 1048576,
+    max_output_length: 131072,
+    architecture: {
+      modality: "text->text",
+      input_modalities: ["text", "image"],
+      output_modalities: ["text"],
+    },
+    pricing: {
+      prompt: "0.000000435", // $0.435/M tokens (cache miss)
+      completion: "0.00000087", // $0.87/M tokens
+      input_cache_read: "0.0000000036", // $0.0036/M tokens (cache hit)
+    },
+  },
+  {
+    id: "mimo-v2.6-flash",
+    name: "MiMo V2.6 Flash",
+    context_length: 1048576,
+    max_output_length: 131072,
+    architecture: {
+      modality: "text->text",
+      input_modalities: ["text", "image"],
+      output_modalities: ["text"],
+    },
+    pricing: {
+      prompt: "0.00000014", // $0.14/M tokens (cache miss)
+      completion: "0.00000028", // $0.28/M tokens
+      input_cache_read: "0.0000000028", // $0.0028/M tokens (cache hit)
+    },
+  },
+  {
+    id: "mimo-v2.5-pro",
+    name: "MiMo V2.5 Pro",
+    context_length: 1048576,
+    max_output_length: 131072,
+    architecture: {
+      modality: "text->text",
+      input_modalities: ["text", "image"],
+      output_modalities: ["text"],
+    },
+    pricing: {
+      prompt: "0.000000435", // $0.435/M tokens (cache miss)
+      completion: "0.00000087", // $0.87/M tokens
+      input_cache_read: "0.0000000036", // $0.0036/M tokens (cache hit)
     },
   },
 ];
 
+/** Convert a model id plus optional platform metadata into a pi model definition. */
+function toModelDef(id: string, plat?: MiMoPlatformModel) {
+  const inputModalities = plat?.architecture?.input_modalities ?? ["text"];
+  const input: Array<"text" | "image"> = [];
+  if (inputModalities.includes("text")) input.push("text");
+  if (inputModalities.includes("image")) input.push("image");
+
+  // Parse pricing — can be single object or array (tiered). Values are USD per
+  // token (0.000000435 = $0.435/M), rounded to 4 decimals of the per-million price.
+  let cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  if (plat?.pricing) {
+    const p = Array.isArray(plat.pricing) ? plat.pricing[0] : plat.pricing;
+    const perMillion = (v?: string) => Math.round(Number(v ?? 0) * 1_000_000 * 10_000) / 10_000;
+    cost = {
+      input: perMillion(p.prompt),
+      output: perMillion(p.completion),
+      cacheRead: perMillion(p.input_cache_read),
+      cacheWrite: 0,
+    };
+  }
+
+  return {
+    id,
+    name: plat?.name ?? id,
+    reasoning: /reasoning|pro|think/i.test(id),
+    input: input.length > 0 ? input : (["text"] as Array<"text" | "image">),
+    cost,
+    contextWindow: plat?.context_length ?? 128000,
+    maxTokens: plat?.max_output_length ?? 131072,
+  };
+}
+
 export default async function (pi: ExtensionAPI) {
   const { apiKey, baseUrl, api } = resolveConfig();
 
-  if (!apiKey) {
-    console.error(
-      "[pi-mimo] MIMO_API_KEY not set. Skipping MiMo provider registration.\n" +
-        "Set it with one of:\n" +
-        "  export MIMO_API_KEY=your-api-key\n" +
-        '  echo \'{"mimo":{"type":"api_key","key":"your-api-key"}}\' >> ~/.pi/agent/auth.json',
-    );
-    return;
-  }
-
-  // Fetch models from token-plan API
-  let modelsResponse: MiMoModelsResponse;
-  try {
-    const response = await fetch(getModelsListUrl(baseUrl), {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      console.error(
-        `[pi-mimo] Failed to fetch models: ${response.status} ${response.statusText}`,
-      );
-      return;
-    }
-
-    modelsResponse = (await response.json()) as MiMoModelsResponse;
-  } catch (error) {
-    console.error(
-      `[pi-mimo] Error fetching models: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return;
-  }
-
-  if (!modelsResponse.data || modelsResponse.data.length === 0) {
-    console.error("[pi-mimo] No models returned from API.");
-    return;
-  }
-
-  // Enrich with platform metadata if available
-  // Seed with built-in entries first; platform API data takes precedence when available.
+  // Platform metadata (context window, max output, pricing, modalities).
+  // Built-ins seed the map; live platform data wins for shared IDs.
   const platformModels: Map<string, MiMoPlatformModel> = new Map(
     BUILTIN_PLATFORM_MODELS.map((m) => [m.id, m]),
   );
@@ -249,52 +293,54 @@ export default async function (pi: ExtensionAPI) {
     // Platform metadata optional — proceed without
   }
 
-  // Filter to coding-only models
-  const codingModels = modelsResponse.data.filter((model) =>
-    isCodingModel(model, platformModels.get(model.id)),
-  );
+  // Live model discovery. Skipped without a key: /login can still be used
+  // afterwards, and the built-in models below are registered either way.
+  const liveIds: string[] = [];
+  if (apiKey) {
+    try {
+      const response = await fetch(getModelsListUrl(baseUrl), {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      });
 
-  if (codingModels.length === 0) {
-    console.error("[pi-mimo] No coding-capable models found after filtering.");
-    return;
+      if (response.ok) {
+        const { data = [] } = (await response.json()) as MiMoModelsResponse;
+        liveIds.push(
+          ...data
+            .filter((model) => isCodingModel(model, platformModels.get(model.id)))
+            .map((m) => m.id),
+        );
+      } else {
+        console.error(
+          `[pi-mimo] Failed to fetch models: ${response.status} ${response.statusText}`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        `[pi-mimo] Error fetching models: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  } else {
+    console.error(
+      "[pi-mimo] No MiMo API key yet — registering built-in models. Add one with:\n" +
+        "  /login mimo\n" +
+        '  export MIMO_API_KEY="your-api-key"\n' +
+        '  or ~/.pi/agent/auth.json -> {"mimo":{"type":"api_key","key":"your-api-key"}}',
+    );
   }
 
-  const filtered = modelsResponse.data.length - codingModels.length;
-
-  const models = codingModels.map((model) => {
-    const plat = platformModels.get(model.id);
-    const inputModalities = plat?.architecture?.input_modalities ?? ["text"];
-    const input: Array<"text" | "image"> = [];
-    if (inputModalities.includes("text")) input.push("text");
-    if (inputModalities.includes("image")) input.push("image");
-
-    // Parse pricing — can be single object or array (tiered)
-    let costPerMillion = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-    if (plat?.pricing) {
-      const p = Array.isArray(plat.pricing) ? plat.pricing[0] : plat.pricing;
-      costPerMillion = {
-        input: Math.round(Number(p.prompt) * 1_000_000 * 100) / 100,
-        output: Math.round(Number(p.completion) * 1_000_000 * 100) / 100,
-        cacheRead: Math.round(Number(p.input_cache_read ?? 0) * 1_000_000 * 100) / 100,
-        cacheWrite: 0,
-      };
-    }
-
-    return {
-      id: model.id,
-      name: plat?.name ?? model.id,
-      reasoning: /reasoning|pro|think/i.test(model.id),
-      input: input.length > 0 ? input : (["text"] as Array<"text" | "image">),
-      cost: costPerMillion,
-      contextWindow: plat?.context_length ?? 128000,
-      maxTokens: plat?.max_output_length ?? 131072,
-    };
-  });
+  // Built-ins backfill discovery so MiMo models exist before /login, when the
+  // key is rejected, or when the API is unreachable.
+  const modelIds = [...new Set([...liveIds, ...BUILTIN_PLATFORM_MODELS.map((m) => m.id)])];
 
   pi.registerProvider("mimo", {
+    name: "Xiaomi MiMo",
     baseUrl,
-    apiKey,
+    // pi resolves the key from the stored credential (/login) or $MIMO_API_KEY.
+    apiKey: "$MIMO_API_KEY",
     api,
-    models,
+    models: modelIds.map((id) => toModelDef(id, platformModels.get(id))),
   });
 }
