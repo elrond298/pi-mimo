@@ -263,9 +263,12 @@ function toModelDef(id: string, plat?: MiMoPlatformModel) {
     id,
     name: plat?.name ?? id,
     reasoning: isReasoning,
-    // Map pi thinking levels → MiMo API thinking types.
-    // "max" and "xhigh" are only exposed when thinkingLevelMap has an entry for them.
-    thinkingLevelMap: { minimal: "low", xhigh: "high", max: "max" },
+    // Map pi thinking levels to MiMo reasoning_effort values.
+    // MiMo accepts only "low" | "medium" | "high" (verified against the API);
+    // anything else returns 400 Invalid request parameters. "minimal" -> "low".
+    // null hides "xhigh"/"max" from the UI. If a config or CLI flag still
+    // requests one, pi's clampThinkingLevel() resolves it to "high" before sending.
+    thinkingLevelMap: { minimal: "low", xhigh: null, max: null },
     input: input.length > 0 ? input : (["text"] as Array<"text" | "image">),
     cost,
     contextWindow: plat?.context_length ?? 128000,
