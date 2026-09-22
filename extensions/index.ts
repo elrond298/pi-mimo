@@ -257,10 +257,15 @@ function toModelDef(id: string, plat?: MiMoPlatformModel) {
     };
   }
 
+  const isReasoning = /reasoning|pro|think/i.test(id);
+
   return {
     id,
     name: plat?.name ?? id,
-    reasoning: /reasoning|pro|think/i.test(id),
+    reasoning: isReasoning,
+    // Map pi thinking levels → MiMo API thinking types.
+    // "max" and "xhigh" are only exposed when thinkingLevelMap has an entry for them.
+    thinkingLevelMap: { minimal: "low", xhigh: "high", max: "max" },
     input: input.length > 0 ? input : (["text"] as Array<"text" | "image">),
     cost,
     contextWindow: plat?.context_length ?? 128000,
