@@ -257,8 +257,7 @@ function toModelDef(id: string, plat?: MiMoPlatformModel) {
     };
   }
 
-  const isReasoning = /reasoning|pro|think/i.test(id);
-
+  const isReasoning = THINKING_MODELS.has(id);
   return {
     id,
     name: plat?.name ?? id,
@@ -275,6 +274,14 @@ function toModelDef(id: string, plat?: MiMoPlatformModel) {
     maxTokens: plat?.max_output_length ?? 131072,
   };
 }
+/** Models that support thinking (verified against the API). Set one by one — MiMo has few models. */
+const THINKING_MODELS = new Set([
+  "mimo-v2.5",
+  "mimo-v2.5-pro",
+  "mimo-v2.5-pro-ultraspeed",
+  "mimo-v2.6-flash",
+  "mimo-v2.6-pro",
+]);
 
 export default async function (pi: ExtensionAPI) {
   const { apiKey, baseUrl, api } = resolveConfig();
